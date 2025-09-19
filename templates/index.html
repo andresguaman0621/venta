@@ -58,6 +58,11 @@
 
     <script>
         const productos = {{ productos | tojson | safe }};
+
+        // 🔤 Convierte a mayúsculas mientras el usuario escribe
+        document.getElementById('nombreCliente').addEventListener('input', function() {
+            this.value = this.value.toUpperCase();
+        });
         
         function cambiarCantidad(productoId, cambio) {
             const input = document.getElementById(`producto${productoId}`);

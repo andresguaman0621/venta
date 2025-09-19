@@ -86,10 +86,19 @@
             const pedidosPendientes = pedidos.filter(p => p.estado === 'pendiente');
 
             container.innerHTML = pedidosPendientes.length > 0 
-                ? pedidosPendientes.map(renderizarPedidoDespacho).join('')
+                ? pedidosPendientes
+                    .sort((a, b) => new Date(b.fecha_creacion) - new Date(a.fecha_creacion))
+                    .map(renderizarPedidoDespacho).join('')
                 : '<div class="no-pedidos">No hay pedidos pendientes para despachar</div>';
 
             actualizarEstadisticas();
+        }
+
+        function scrollToTopDespacho() {
+            const container = document.getElementById('pedidosPendientesLista');
+            setTimeout(() => {
+                container.scrollTop = 0;
+            }, 100);
         }
 
         async function despacharPedido(pedidoId) {
@@ -134,10 +143,13 @@
             pedidos.push(pedido);
             actualizarListaDespacho();
             
+            // Hacer scroll automático hacia arriba para ver el nuevo pedido
+            scrollToTopDespacho();
+            
             // Mostrar notificación de nuevo pedido
             const notification = document.createElement('div');
             notification.className = 'notification nuevo-pedido';
-            notification.innerHTML = `🔔 Nuevo pedido #${pedido.id} de ${pedido.nombre_cliente} listo para despachar`;
+            notification.innerHTML = `Nuevo pedido #${pedido.id} de ${pedido.nombre_cliente} listo para despachar`;
             document.body.appendChild(notification);
             
             setTimeout(() => {

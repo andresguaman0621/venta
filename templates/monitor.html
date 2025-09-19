@@ -116,10 +116,10 @@
             actualizarEstadisticas();
         }
 
-        function scrollToBottom() {
+        function scrollToTop() {
             const container = document.getElementById('pedidosLista');
             setTimeout(() => {
-                container.scrollTop = container.scrollHeight;
+                container.scrollTop = 0;
             }, 100);
         }
 
@@ -160,9 +160,9 @@
             pedidos.push(pedido);
             actualizarVista();
             
-            // Si estamos viendo pendientes, hacer scroll automático
+            // Si estamos viendo pendientes, hacer scroll automático hacia arriba
             if (vistaActual === 'pendientes') {
-                scrollToBottom();
+                scrollToTop();
             }
             
             // Mostrar notificación

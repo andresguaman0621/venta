@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Café de Quito - Despacho</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <div class="logo-container">
+                <img src="{{ url_for('static', filename='img/logo5.png') }}" alt="Café de Quito" class="logo">
+            </div>
+            <nav>
+                <a href="/">Hacer Pedido</a>
+                <a href="/monitor">Monitor Pedidos</a>
+                <a href="/despacho">Despacho</a>
+                <a href="/estadisticas">Estadísticas</a>
+            </nav>
+        </header>
+
+        <main>
+            <h2>Despacho de Pedidos</h2>
+            
+            <div class="stats-bar">
+                <div class="stat">
+                    <span class="stat-label">Pedidos Pendientes:</span>
+                    <span id="pedidosPendientes" class="stat-value">0</span>
+                </div>
+                <div class="stat">
+                    <span class="stat-label">Despachados Hoy:</span>
+                    <span id="pedidosDespachados" class="stat-value">0</span>
+                </div>
+            </div>
+
+            <div id="mensaje" class="mensaje"></div>
+
+            <div class="despacho-container">
+                <h3>🕒 Pedidos Listos para Despachar</h3>
+                <div id="pedidosPendientesLista" class="pedidos-lista-despacho"></div>
+            </div>
+        </main>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.1/socket.io.js"></script>
+    <script>
+        const socket = io();
+        let pedidos = [];
+
+        function actualizarEstadisticas() {
+            const pendientes = pedidos.filter(p => p.estado === 'pendiente').length;
+            const despachados = pedidos.filter(p => p.estado === 'despachado').length;
+
+            document.getElementById('pedidosPendientes').textContent = pendientes;
+            document.getElementById('pedidosDespachados').textContent = despachados;
+        }
+
+        function renderizarPedidoDespacho(pedido) {
+            const itemsHtml = pedido.items.map(item => 
+                `<li><strong>${item.cantidad}x ${item.nombre}</strong> - $${item.subtotal.toFixed(2)}</li>`
+            ).join('');
+
+            return `
+                <div class="pedido-despacho" data-id="${pedido.id}">
+                    <div class="pedido-info">
+                        <div class="pedido-header">
+                            <h4>Pedido #${pedido.id}</h4>
+                            <span class="timestamp">${pedido.fecha_creacion}</span>
+                        </div>
+                        <div class="cliente-nombre">👤 <strong>${pedido.nombre_cliente}</strong></div>
+                        <ul class="items-lista">${itemsHtml}</ul>
+                        <div class="total">Total: <strong>$${pedido.total.toFixed(2)}</strong></div>
+                    </div>
+                    <div class="acciones">
+                        <button class="btn-despachar" onclick="despacharPedido(${pedido.id})">
+                            ✅ Despachar Pedido
+                        </button>
+                    </div>
+                </div>
+            `;
+        }
+
+        function actualizarListaDespacho() {
+            const container = document.getElementById('pedidosPendientesLista');
+            const pedidosPendientes = pedidos.filter(p => p.estado === 'pendiente');
+
+            container.innerHTML = pedidosPendientes.length > 0 
+                ? pedidosPendientes.map(renderizarPedidoDespacho).join('')
+                : '<div class="no-pedidos">No hay pedidos pendientes para despachar</div>';
+
+            actualizarEstadisticas();
+        }
+
+        async function despacharPedido(pedidoId) {
+            try {
+                const response = await fetch(`/api/despachar_pedido/${pedidoId}`, {
+                    method: 'POST'
+                });
+
+                const data = await response.json();
+                
+                if (data.success) {
+                    mostrarMensaje(`✅ Pedido #${pedidoId} despachado exitosamente`, 'success');
+                } else {
+                    mostrarMensaje(`❌ Error: ${data.error}`, 'error');
+                }
+            } catch (error) {
+                mostrarMensaje('❌ Error de conexión', 'error');
+            }
+        }
+
+        function mostrarMensaje(texto, tipo) {
+            const mensajeDiv = document.getElementById('mensaje');
+            mensajeDiv.innerHTML = `<div class="${tipo}">${texto}</div>`;
+            setTimeout(() => {
+                mensajeDiv.innerHTML = '';
+            }, 3000);
+        }
+
+        // Cargar pedidos existentes
+        async function cargarPedidos() {
+            try {
+                const response = await fetch('/api/pedidos');
+                pedidos = await response.json();
+                actualizarListaDespacho();
+            } catch (error) {
+                console.error('Error cargando pedidos:', error);
+            }
+        }
+
+        // Socket events
+        socket.on('nuevo_pedido', function(pedido) {
+            pedidos.push(pedido);
+            actualizarListaDespacho();
+            
+            // Mostrar notificación de nuevo pedido
+            const notification = document.createElement('div');
+            notification.className = 'notification nuevo-pedido';
+            notification.innerHTML = `🔔 Nuevo pedido #${pedido.id} de ${pedido.nombre_cliente} listo para despachar`;
+            document.body.appendChild(notification);
+            
+            setTimeout(() => {
+                notification.remove();
+            }, 5000);
+        });
+
+        socket.on('pedido_despachado', function(pedidoActualizado) {
+            const index = pedidos.findIndex(p => p.id === pedidoActualizado.id);
+            if (index !== -1) {
+                pedidos[index] = pedidoActualizado;
+                actualizarListaDespacho();
+            }
+        });
+
+        // Cargar datos al inicio
+        cargarPedidos();
+    </script>
+</body>
+</html>

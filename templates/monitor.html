@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Café de Quito - Monitor de Pedidos</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <div class="logo-container">
+                <img src="{{ url_for('static', filename='img/logo5.png') }}" alt="Café de Quito" class="logo">
+            </div>
+            <nav>
+                <a href="/">Hacer Pedido</a>
+                <a href="/monitor">Monitor Pedidos</a>
+                <a href="/despacho">Despacho</a>
+                <a href="/estadisticas">Estadísticas</a>
+            </nav>
+        </header>
+
+        <main>
+            <h2>Monitor de Pedidos en Tiempo Real</h2>
+            
+            <div class="stats-bar">
+                <div class="stat">
+                    <span class="stat-label">Total Pedidos:</span>
+                    <span id="totalPedidos" class="stat-value">0</span>
+                </div>
+                <div class="stat">
+                    <span class="stat-label">Pendientes:</span>
+                    <span id="pedidosPendientes" class="stat-value">0</span>
+                </div>
+                <div class="stat">
+                    <span class="stat-label">Despachados:</span>
+                    <span id="pedidosDespachados" class="stat-value">0</span>
+                </div>
+            </div>
+
+            <div class="vista-selector">
+                <div class="switch-container">
+                    <label class="switch">
+                        <input type="radio" name="vista" value="pendientes" checked>
+                        <span class="switch-option active">Pedidos Pendientes</span>
+                    </label>
+                    <label class="switch">
+                        <input type="radio" name="vista" value="despachados">
+                        <span class="switch-option">Pedidos Despachados</span>
+                    </label>
+                </div>
+            </div>
+
+            <div class="pedidos-vista-unica">
+                <div id="pedidosLista" class="pedidos-lista-apilada"></div>
+            </div>
+        </main>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.1/socket.io.js"></script>
+    <script>
+        const socket = io();
+        let pedidos = [];
+        let vistaActual = 'pendientes';
+
+        function actualizarEstadisticas() {
+            const total = pedidos.length;
+            const pendientes = pedidos.filter(p => p.estado === 'pendiente').length;
+            const despachados = pedidos.filter(p => p.estado === 'despachado').length;
+
+            document.getElementById('totalPedidos').textContent = total;
+            document.getElementById('pedidosPendientes').textContent = pendientes;
+            document.getElementById('pedidosDespachados').textContent = despachados;
+        }
+
+        function renderizarPedido(pedido) {
+            const itemsHtml = pedido.items.map(item => 
+                `<li>${item.cantidad}x ${item.nombre} - $${item.subtotal.toFixed(2)}</li>`
+            ).join('');
+
+            return `
+                <div class="pedido-card-apilado" data-id="${pedido.id}">
+                    <div class="pedido-header">
+                        <h4>Pedido #${pedido.id}</h4>
+                        <span class="timestamp">${pedido.fecha_creacion}</span>
+                    </div>
+                    <div class="cliente-nombre">Cliente: ${pedido.nombre_cliente}</div>
+                    <ul class="items-lista">${itemsHtml}</ul>
+                    <div class="total">Total: $${pedido.total.toFixed(2)}</div>
+                    ${pedido.fecha_despacho ? `<div class="despacho-time">Despachado: ${pedido.fecha_despacho}</div>` : ''}
+                </div>
+            `;
+        }
+
+        function actualizarVista() {
+            const container = document.getElementById('pedidosLista');
+            
+            let pedidosFiltrados = [];
+            if (vistaActual === 'pendientes') {
+                pedidosFiltrados = pedidos.filter(p => p.estado === 'pendiente');
+            } else {
+                pedidosFiltrados = pedidos.filter(p => p.estado === 'despachado');
+            }
+
+            if (pedidosFiltrados.length > 0) {
+                container.innerHTML = pedidosFiltrados
+                    .sort((a, b) => new Date(b.fecha_creacion) - new Date(a.fecha_creacion))
+                    .map(renderizarPedido).join('');
+            } else {
+                const mensaje = vistaActual === 'pendientes' 
+                    ? 'No hay pedidos pendientes' 
+                    : 'No hay pedidos despachados';
+                container.innerHTML = `<div class="no-pedidos">${mensaje}</div>`;
+            }
+
+            actualizarEstadisticas();
+        }
+
+        function scrollToBottom() {
+            const container = document.getElementById('pedidosLista');
+            setTimeout(() => {
+                container.scrollTop = container.scrollHeight;
+            }, 100);
+        }
+
+        function cambiarVista(nuevaVista) {
+            vistaActual = nuevaVista;
+            
+            // Actualizar apariencia del switch
+            document.querySelectorAll('.switch-option').forEach(option => {
+                option.classList.remove('active');
+            });
+            
+            const switchActivo = document.querySelector(`input[value="${nuevaVista}"]`).nextElementSibling;
+            switchActivo.classList.add('active');
+            
+            actualizarVista();
+        }
+
+        // Event listeners para el switch
+        document.querySelectorAll('input[name="vista"]').forEach(radio => {
+            radio.addEventListener('change', function() {
+                cambiarVista(this.value);
+            });
+        });
+
+        // Cargar pedidos existentes
+        async function cargarPedidos() {
+            try {
+                const response = await fetch('/api/pedidos');
+                pedidos = await response.json();
+                actualizarVista();
+            } catch (error) {
+                console.error('Error cargando pedidos:', error);
+            }
+        }
+
+        // Socket events
+        socket.on('nuevo_pedido', function(pedido) {
+            pedidos.push(pedido);
+            actualizarVista();
+            
+            // Si estamos viendo pendientes, hacer scroll automático
+            if (vistaActual === 'pendientes') {
+                scrollToBottom();
+            }
+            
+            // Mostrar notificación
+            const notification = document.createElement('div');
+            notification.className = 'notification nuevo-pedido';
+            notification.innerHTML = `Nuevo pedido #${pedido.id} de ${pedido.nombre_cliente}`;
+            document.body.appendChild(notification);
+            
+            setTimeout(() => {
+                notification.remove();
+            }, 5000);
+        });
+
+        socket.on('pedido_despachado', function(pedidoActualizado) {
+            const index = pedidos.findIndex(p => p.id === pedidoActualizado.id);
+            if (index !== -1) {
+                pedidos[index] = pedidoActualizado;
+                actualizarVista();
+            }
+        });
+
+        // Cargar datos al inicio
+        cargarPedidos();
+    </script>
+</body>
+</html>

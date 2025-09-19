@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Café de Quito - Hacer Pedido</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <div class="logo-container">
+                <img src="{{ url_for('static', filename='img/logo5.png') }}" alt="Café de Quito" class="logo">
+            </div>
+            <nav>
+                <a href="/">Hacer Pedido</a>
+                <a href="/monitor">Monitor Pedidos</a>
+                <a href="/despacho">Despacho</a>
+                <a href="/estadisticas">Estadísticas</a>
+            </nav>
+        </header>
+
+        <main>
+            <h2>Nuevo Pedido</h2>
+            <form id="pedidoForm">
+                <div class="cliente-info">
+                    <label for="nombreCliente">Nombre del Cliente:</label>
+                    <input type="text" id="nombreCliente" required>
+                </div>
+
+                <div class="productos">
+                    <h3>Selecciona tus productos:</h3>
+                    {% for id, producto in productos.items() %}
+                    <div class="producto-item">
+                        <div class="producto-info">
+                            <h4>{{ producto.nombre }}</h4>
+                            <span class="precio">${{ "{:.2f}".format(producto.precio) }}</span>
+                        </div>
+                        <div class="cantidad-control">
+                            <button type="button" onclick="cambiarCantidad('{{ id }}', -1)">-</button>
+                            <input type="number" id="producto{{ id }}" value="0" min="0" readonly>
+                            <button type="button" onclick="cambiarCantidad('{{ id }}', 1)">+</button>
+                        </div>
+                    </div>
+                    {% endfor %}
+                </div>
+
+                <div class="total-section">
+                    <h3>Total: $<span id="totalPedido">0</span></h3>
+                </div>
+
+                <button type="submit" class="btn-submit">Crear Pedido</button>
+            </form>
+
+            <div id="mensaje" class="mensaje"></div>
+        </main>
+    </div>
+
+    <script>
+        const productos = {{ productos | tojson | safe }};
+        
+        function cambiarCantidad(productoId, cambio) {
+            const input = document.getElementById(`producto${productoId}`);
+            const nuevaCantidad = Math.max(0, parseInt(input.value) + cambio);
+            input.value = nuevaCantidad;
+            calcularTotal();
+        }
+
+        function calcularTotal() {
+            let total = 0;
+            for (const [id, producto] of Object.entries(productos)) {
+                const cantidad = parseInt(document.getElementById(`producto${id}`).value);
+                total += cantidad * producto.precio;
+            }
+            // Redondear a 2 decimales para evitar problemas de precisión
+            total = Math.round(total * 100) / 100;
+            document.getElementById('totalPedido').textContent = total.toFixed(2);
+        }
+
+        document.getElementById('pedidoForm').addEventListener('submit', async function(e) {
+            e.preventDefault();
+            
+            const nombreCliente = document.getElementById('nombreCliente').value;
+            const productos_pedido = {};
+            
+            for (const id of Object.keys(productos)) {
+                productos_pedido[id] = parseInt(document.getElementById(`producto${id}`).value);
+            }
+
+            try {
+                const response = await fetch('/api/crear_pedido', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        nombre_cliente: nombreCliente,
+                        productos: productos_pedido
+                    })
+                });
+
+                const data = await response.json();
+                
+                if (data.success) {
+                    document.getElementById('mensaje').innerHTML = 
+                        `<div class="success">✅ Pedido creado exitosamente! ID: ${data.pedido_id}</div>`;
+                    document.getElementById('pedidoForm').reset();
+                    calcularTotal();
+                } else {
+                    document.getElementById('mensaje').innerHTML = 
+                        `<div class="error">❌ Error: ${data.error}</div>`;
+                }
+            } catch (error) {
+                document.getElementById('mensaje').innerHTML = 
+                    `<div class="error">❌ Error de conexión</div>`;
+            }
+        });
+
+        // Calcular total inicial
+        calcularTotal();
+    </script>
+</body>
+</html>

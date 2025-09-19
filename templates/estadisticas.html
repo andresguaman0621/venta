@@ -1,0 +1,205 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Café de Quito - Estadísticas</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <div class="logo-container">
+                <img src="{{ url_for('static', filename='img/logo5.png') }}" alt="Café de Quito" class="logo">
+            </div>
+            <nav>
+                <a href="/">Hacer Pedido</a>
+                <a href="/monitor">Monitor Pedidos</a>
+                <a href="/despacho">Despacho</a>
+                <a href="/estadisticas">Estadísticas</a>
+            </nav>
+        </header>
+
+        <main>
+            <h2>Estadísticas y Reportes</h2>
+            
+            <div class="stats-grid">
+                <div class="stat-card">
+                    <div class="stat-icon">📋</div>
+                    <div class="stat-content">
+                        <h3>Total Pedidos</h3>
+                        <div class="stat-number" id="totalPedidos">0</div>
+                    </div>
+                </div>
+
+                <div class="stat-card">
+                    <div class="stat-icon">⏳</div>
+                    <div class="stat-content">
+                        <h3>Pedidos Pendientes</h3>
+                        <div class="stat-number" id="pedidosPendientes">0</div>
+                    </div>
+                </div>
+
+                <div class="stat-card">
+                    <div class="stat-icon">✓</div>
+                    <div class="stat-content">
+                        <h3>Pedidos Despachados</h3>
+                        <div class="stat-number" id="pedidosDespachados">0</div>
+                    </div>
+                </div>
+
+                <div class="stat-card">
+                    <div class="stat-icon">$</div>
+                    <div class="stat-content">
+                        <h3>Ingresos Totales</h3>
+                        <div class="stat-number" id="ingresosTotales">$0</div>
+                    </div>
+                </div>
+
+                <div class="stat-card wide">
+                    <div class="stat-icon">★</div>
+                    <div class="stat-content">
+                        <h3>Producto Más Vendido</h3>
+                        <div class="stat-text">
+                            <div id="productoMasVendido">-</div>
+                            <div class="stat-detail" id="cantidadMasVendido">0 unidades</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="acciones-reporte">
+                <button onclick="actualizarEstadisticas()" class="btn-actualizar">Actualizar Datos</button>
+                <button onclick="exportarReportePDF()" class="btn-exportar">Exportar Reporte PDF</button>
+            </div>
+
+            <div class="pedidos-detalle">
+                <h3>Detalle de Pedidos</h3>
+                <div class="filtros">
+                    <label>
+                        <input type="radio" name="filtro" value="todos" checked> Todos
+                    </label>
+                    <label>
+                        <input type="radio" name="filtro" value="pendientes"> Pendientes
+                    </label>
+                    <label>
+                        <input type="radio" name="filtro" value="despachados"> Despachados
+                    </label>
+                </div>
+                <div id="pedidosDetalle" class="pedidos-tabla"></div>
+            </div>
+        </main>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.1/socket.io.js"></script>
+    <script>
+        const socket = io();
+        let pedidos = [];
+        let estadisticas = {};
+
+        async function actualizarEstadisticas() {
+            try {
+                const [pedidosResponse, statsResponse] = await Promise.all([
+                    fetch('/api/pedidos'),
+                    fetch('/api/estadisticas')
+                ]);
+
+                pedidos = await pedidosResponse.json();
+                estadisticas = await statsResponse.json();
+
+                renderizarEstadisticas();
+                renderizarDetallePedidos();
+            } catch (error) {
+                console.error('Error cargando estadísticas:', error);
+            }
+        }
+
+        function renderizarEstadisticas() {
+            document.getElementById('totalPedidos').textContent = estadisticas.total_pedidos;
+            document.getElementById('pedidosPendientes').textContent = estadisticas.pedidos_pendientes;
+            document.getElementById('pedidosDespachados').textContent = estadisticas.pedidos_despachados;
+            document.getElementById('ingresosTotales').textContent = `$${estadisticas.ingresos_totales.toFixed(2)}`;
+            document.getElementById('productoMasVendido').textContent = estadisticas.producto_mas_vendido.nombre;
+            document.getElementById('cantidadMasVendido').textContent = `${estadisticas.producto_mas_vendido.cantidad} unidades`;
+        }
+
+        function renderizarDetallePedidos() {
+            const filtro = document.querySelector('input[name="filtro"]:checked').value;
+            let pedidosFiltrados = pedidos;
+
+            if (filtro === 'pendientes') {
+                pedidosFiltrados = pedidos.filter(p => p.estado === 'pendiente');
+            } else if (filtro === 'despachados') {
+                pedidosFiltrados = pedidos.filter(p => p.estado === 'despachado');
+            }
+
+            const container = document.getElementById('pedidosDetalle');
+            
+            if (pedidosFiltrados.length === 0) {
+                container.innerHTML = '<div class="no-pedidos">No hay pedidos para mostrar</div>';
+                return;
+            }
+
+            const tabla = `
+                <table class="pedidos-table">
+                    <thead>
+                        <tr>
+                            <th>ID</th>
+                            <th>Cliente</th>
+                            <th>Items</th>
+                            <th>Total</th>
+                            <th>Estado</th>
+                            <th>Fecha Creación</th>
+                            <th>Fecha Despacho</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${pedidosFiltrados.map(pedido => `
+                            <tr class="pedido-row ${pedido.estado}">
+                                <td>#${pedido.id}</td>
+                                <td>${pedido.nombre_cliente}</td>
+                                <td>
+                                    <ul class="items-mini">
+                                        ${pedido.items.map(item => `<li>${item.cantidad}x ${item.nombre}</li>`).join('')}
+                                    </ul>
+                                </td>
+                                <td>$${pedido.total.toFixed(2)}</td>
+                                <td>
+                                    <span class="estado-badge ${pedido.estado}">
+                                        ${pedido.estado === 'pendiente' ? '⏳ Pendiente' : '✅ Despachado'}
+                                    </span>
+                                </td>
+                                <td>${pedido.fecha_creacion}</td>
+                                <td>${pedido.fecha_despacho || '-'}</td>
+                            </tr>
+                        `).join('')}
+                    </tbody>
+                </table>
+            `;
+
+            container.innerHTML = tabla;
+        }
+
+        function exportarReportePDF() {
+            window.open('/api/exportar_reporte_pdf', '_blank');
+        }
+
+        // Event listeners
+        document.querySelectorAll('input[name="filtro"]').forEach(radio => {
+            radio.addEventListener('change', renderizarDetallePedidos);
+        });
+
+        // Socket events
+        socket.on('nuevo_pedido', function(pedido) {
+            actualizarEstadisticas();
+        });
+
+        socket.on('pedido_despachado', function(pedido) {
+            actualizarEstadisticas();
+        });
+
+        // Cargar datos al inicio
+        actualizarEstadisticas();
+    </script>
+</body>
+</html>
